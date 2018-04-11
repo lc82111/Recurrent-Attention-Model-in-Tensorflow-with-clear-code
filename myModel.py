@@ -417,7 +417,7 @@ class RecurrentAttentionModel(object):
         baselines = baseline_network(h_ts)
 
         # make classify action at last time step
-        pred_offset = regress_network(h_ts[-1])
+        self.pred_offset = regress_network(h_ts[-1])
 
         # training preparation
         self.global_step = tf.Variable(0, trainable=False)
@@ -426,7 +426,7 @@ class RecurrentAttentionModel(object):
 
         ## losses
         # regress loss for regress_network, core_network, glimpse_network
-        self.regress_mse = tf.reduce_mean(tf.square((self.lbl_ph - pred_offset)))
+        self.regress_mse = tf.reduce_mean(tf.square((self.lbl_ph - self.pred_offset)))
 
         # RL reward for location_network
         reward = tf.cast(tf.equal(pred, self.lbl_ph), tf.float32)
@@ -477,13 +477,9 @@ class RecurrentAttentionModel(object):
                             # Duplicate M times
                             images = np.tile(images, [num_MC, 1])
                             labels = np.tile(labels, [num_MC])
-                            softmax = sess.run(self.softmax, feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
-                            softmax = np.reshape(softmax, [num_MC, -1, 10])
-                            softmax = np.mean(softmax, 0)
-                            prediction = np.argmax(softmax, 1).flatten()
-                            correct_cnt += np.sum(prediction == labels_bak)
-                        acc = correct_cnt*1.0 / num_samples
+                            regress_mse = sess.run(self.regress_mse, feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
+
                         if dataset == mnist.validation:
-                            logging.info('valid accuracy = {}'.format(acc))
+                            logging.info('valid mse = {}'.format(regress_mse))
                         else:
-                            logging.info('test accuracy = {}'.format(acc))
+                            logging.info('test mse = {}'.format(regress_mse))
