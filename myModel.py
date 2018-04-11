@@ -380,14 +380,14 @@ class RecurrentAttentionModel(object):
     - log_probas: a 2D tensor of shape (B, num_classes). The
         output log probability vector over the classes.
     """
-    def __init__(self, img_size, pth_size, g_size, l_size, glimpse_output_size,
+    def __init__(self, img_size, translate_img_size, pth_size, g_size, l_size, glimpse_output_size,
                  loc_dim, std, hidden_size, num_glimpses, num_classes,
                  learning_rate, learning_rate_decay_factor, min_learning_rate, training_steps_per_epoch,
                  max_gradient_norm, is_training=False):
         self.training_steps_per_epoch = training_steps_per_epoch
 
         with tf.variable_scope('placeholder'):
-            self.img_ph = tf.placeholder(tf.float32, [None, img_size*img_size])
+            self.img_ph = tf.placeholder(tf.float32, [None, translate_img_size*translate_img_size])
             self.lbl_ph = tf.placeholder(tf.float32, [None, 2])  # offset
             self.is_training = tf.placeholder(tf.bool, [])
 
