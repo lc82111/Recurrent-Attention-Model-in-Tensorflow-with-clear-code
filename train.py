@@ -14,7 +14,7 @@ tf.app.flags.DEFINE_float("learning_rate_decay_factor", 0.97, "Learning rate dec
 tf.app.flags.DEFINE_float("min_learning_rate", 1e-4, "Minimum learning rate.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
-tf.app.flags.DEFINE_integer("num_steps", 100000, "Number of training steps.")
+tf.app.flags.DEFINE_integer("num_steps", 9000009 "Number of training steps.")
 
 tf.app.flags.DEFINE_integer("patch_window_size", 8, "Size of glimpse patch window.")
 tf.app.flags.DEFINE_integer("g_size", 128, "Size of theta_g^0.")
