@@ -47,14 +47,14 @@ def translatedMnist(images, initImgSize=28, finalImgSize=48):
         randX_L = random.randint(0, size_diff)
         randY_L = random.randint(0, size_diff)
 
-        randY_R = random.randint(0, size_diff)
         randX_R = random.randint(0, size_diff)
+        randY_R = random.randint(0, size_diff)
 
         imgOffset[k, :] = np.array([randX_R-randX_L, randY_R-randY_L]).astype(np.float32)
 
         # padding
         image_L = np.lib.pad(image, ((randX_L, size_diff - randX_L), (randY_L, size_diff - randY_L)), 'constant', constant_values = (0.0))
-        image_R = np.lib.pad(image, ((randY_R, size_diff - randX_R), (randY_R, size_diff - randY_R)), 'constant', constant_values = (0.0))
+        image_R = np.lib.pad(image, ((randX_R, size_diff - randX_R), (randY_R, size_diff - randY_R)), 'constant', constant_values = (0.0))
 
         # newimages[k, :, 0] = np.reshape(image_L, (finalImgSize*finalImgSize))
         # newimages[k, :, 1] = np.reshape(image_R, (finalImgSize*finalImgSize))
