@@ -14,7 +14,7 @@ tf.app.flags.DEFINE_float("learning_rate_decay_factor", 0.97, "Learning rate dec
 tf.app.flags.DEFINE_float("min_learning_rate", 1e-4, "Minimum learning rate.")
 tf.app.flags.DEFINE_float("max_gradient_norm", 5.0, "Clip gradients to this norm.")
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
-tf.app.flags.DEFINE_integer("num_steps", 9000009 "Number of training steps.")
+tf.app.flags.DEFINE_integer("num_steps", 9000009, "Number of training steps.")
 
 tf.app.flags.DEFINE_integer("patch_window_size", 8, "Size of glimpse patch window.")
 tf.app.flags.DEFINE_integer("g_size", 128, "Size of theta_g^0.")
@@ -27,7 +27,7 @@ tf.app.flags.DEFINE_integer("M", 10, "Monte Carlo sampling, see Eq(2).")
 
 FLAGS = tf.app.flags.FLAGS
 
-mnist = input_data.read_data_sets('./MNIST_data/', one_hot=False)
+mnist = input_data.read_data_sets('/media/congliu/0A24B2D424B2C1CD/mnist_data/', one_hot=False)
 training_steps_per_epoch = mnist.train.num_examples // FLAGS.batch_size
 
 

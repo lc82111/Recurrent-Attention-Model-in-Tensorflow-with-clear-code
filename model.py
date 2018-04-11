@@ -19,7 +19,7 @@ def _log_likelihood(mean_ts, loc_ts, std):
     """
     Args
     - mean_ts: a list with len=num_glimpses contains tensors with shape (B, 2)
-    - loc_ts: a list with len=num_glimpses contains tensors with shape (B, 2)
+    - loc_ts: a list with len=num_glimpses contains tensors with shape (B, 2), sampled location of all timesteps
     - std: scalar
     Returns
     - logll: tensor with shape (B, timesteps)
@@ -88,23 +88,29 @@ class LocationNetwork(object):
         self.b = _bias_variable((loc_dim,))
         self.is_sampling = is_sampling
 
+
     def __call__(self, h_t):
         # compute mean at this time step
         mean_t = tf.nn.xw_plus_b(h_t, self.w, self.b)
         mean_t = tf.clip_by_value(mean_t, -1., 1.)
         mean_t = tf.stop_gradient(mean_t)
 
-        if self.is_sampling:
-            # sample from gaussian paself.trized by this mean when training
+        def is_sampling_true():
+            # sample from gaussian parameterized by this mean when training
             loc_t = mean_t + tf.random_normal((tf.shape(h_t)[0], self.loc_dim), stddev=self.std)
             loc_t = tf.clip_by_value(loc_t, -1., 1.)
-        else:
+            return loc_t
+
+        def is_sampling_false():
             # using mean when testing
-            loc_t = mean_t
+            return  mean_t
+
+        loc_t = tf.cond(self.is_sampling, is_sampling_true, is_sampling_false)
 
         loc_t = tf.stop_gradient(loc_t)
 
         return loc_t, mean_t
+
 
 
 class GlimpseNetwork(object):
@@ -332,10 +338,11 @@ class RecurrentAttentionModel(object):
         with tf.variable_scope('placeholder'):
             self.img_ph = tf.placeholder(tf.float32, [None, img_size*img_size])
             self.lbl_ph = tf.placeholder(tf.int64, [None])
+            self.is_training = tf.placeholder(tf.bool, [])
 
         ## init network param
         with tf.variable_scope('LocationNetwork'):
-            location_network = LocationNetwork(hidden_size, loc_dim, std=std, is_sampling=is_training)
+            location_network = LocationNetwork(hidden_size, loc_dim, std=std, is_sampling=self.is_training)
 
         with tf.variable_scope('RetinaSensor'):
             retina_sensor = RetinaSensor(img_size, pth_size)
@@ -360,7 +367,7 @@ class RecurrentAttentionModel(object):
         baselines = baseline_network(h_ts)
 
         # make classify action at last time step
-        logits, pred, softmax = classification_network(h_ts[-1])
+        logits, pred, self.softmax = classification_network(h_ts[-1])
 
         # training preparation
         self.global_step = tf.Variable(0, trainable=False)
@@ -400,7 +407,7 @@ class RecurrentAttentionModel(object):
                 labels = np.tile(labels, [num_MC])
 
                 output_feed = [self.train_op, self.loss, self.xent, self.reward, self.advantage, self.baselines_mse, self.learning_rate]
-                _, loss, xent, reward, advantage, baselines_mse, learning_rate = sess.run(output_feed, feed_dict={self.img_ph: images, self.lbl_ph: labels})
+                _, loss, xent, reward, advantage, baselines_mse, learning_rate = sess.run(output_feed, feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
 
                 # log
                 if step and step % 100 == 0:
@@ -408,7 +415,6 @@ class RecurrentAttentionModel(object):
 
                 # Evaluation
                 if step and step % self.training_steps_per_epoch == 0:
-                    import pdb; pdb.set_trace()  # XXX BREAKPOINT
                     for dataset in [mnist.validation, mnist.test]:
                         steps_per_epoch = dataset.num_examples // batch_size
                         correct_cnt = 0
@@ -419,12 +425,12 @@ class RecurrentAttentionModel(object):
                             # Duplicate M times
                             images = np.tile(images, [num_MC, 1])
                             labels = np.tile(labels, [num_MC])
-                            softmax = sess.run(self.softmax, feed_dict={self.img_ph: images, self.lbl_ph: labels})
+                            softmax = sess.run(self.softmax, feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
                             softmax = np.reshape(softmax, [num_MC, -1, 10])
                             softmax = np.mean(softmax, 0)
                             prediction = np.argmax(softmax, 1).flatten()
                             correct_cnt += np.sum(prediction == labels_bak)
-                        acc = correct_cnt / num_samples
+                        acc = correct_cnt*1.0 / num_samples
                         if dataset == mnist.validation:
                             logging.info('valid accuracy = {}'.format(acc))
                         else:
