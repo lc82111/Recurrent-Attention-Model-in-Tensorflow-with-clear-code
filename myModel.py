@@ -4,6 +4,7 @@ from tensorflow.contrib.legacy_seq2seq.python.ops.seq2seq import rnn_decoder
 from tensorflow.python.ops.distributions.normal import Normal
 import logging
 import numpy as np
+import random
 
 logging.getLogger().setLevel(logging.INFO)
 
@@ -430,7 +431,6 @@ class RecurrentAttentionModel(object):
 
         # RL reward for location_network
         # reward = tf.cast(tf.equal(pred, self.lbl_ph), tf.float32)
-        import pdb; pdb.set_trace()  # XXX BREAKPOINT
         reward = tf.reduce_mean(tf.square((self.lbl_ph - self.pred_offset)), axis=1)  # [batch_sz, ], reduce loc_dim
         rewards = tf.expand_dims(reward, 1)             # [batch_sz, 1]
         rewards = tf.tile(rewards, (1, num_glimpses))   # [batch_sz, timesteps]
