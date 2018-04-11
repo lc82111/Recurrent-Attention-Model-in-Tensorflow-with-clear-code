@@ -432,7 +432,7 @@ class RecurrentAttentionModel(object):
         # reward = tf.cast(tf.equal(pred, self.lbl_ph), tf.float32)
         # rewards = tf.expand_dims(reward, 1)             # [batch_sz, 1]
         import pdb; pdb.set_trace()  # XXX BREAKPOINT
-        reward = tf.reduce_mean(tf.square((self.lbl_ph - self.pred_offset)), axis=1)  # [batch_sz, 1], reduce loc_dim
+        rewards = tf.reduce_mean(tf.square((self.lbl_ph - self.pred_offset)), axis=1)  # [batch_sz, 1], reduce loc_dim
         rewards = tf.tile(rewards, (1, num_glimpses))   # [batch_sz, timesteps]
         advantages = rewards - tf.stop_gradient(baselines) # (B, timesteps), baseline approximate func is trained by baseline loss only.
         self.advantage = tf.reduce_mean(advantages)
