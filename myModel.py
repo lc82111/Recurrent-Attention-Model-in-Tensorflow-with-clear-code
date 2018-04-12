@@ -70,6 +70,8 @@ class RetinaSensor(object):
     A retina that extracts a `patch` around location `loc_t` from image `img_ph`.
     Args
     ----
+    - img_size: img_ph size.
+    - pth_size: patch size.
     - img_ph: a 4D Tensor of shape (B, H, W, C). The minibatch of images.
     - loc_t: a 2D Tensor of shape (B, 2). Contains normalized coordinates in the range [-1, 1].
     - pth_size: a scalar. Size of the square glimpse patch.
@@ -396,7 +398,7 @@ class RecurrentAttentionModel(object):
             location_network = LocationNetwork(hidden_size, loc_dim, std=std, is_sampling=self.is_training)
 
         with tf.variable_scope('RetinaSensor'):
-            retina_sensor = RetinaSensor(img_size, pth_size)
+            retina_sensor = RetinaSensor(translate_img_size, pth_size)
 
         with tf.variable_scope('GlimpseNetwork'):
             glimpse_network = GlimpseNetwork(pth_size, loc_dim, g_size, l_size, glimpse_output_size)
@@ -431,13 +433,13 @@ class RecurrentAttentionModel(object):
 
         # RL reward for location_network
         # reward = tf.cast(tf.equal(pred, self.lbl_ph), tf.float32)
-        reward = tf.reduce_mean(tf.square((self.lbl_ph - self.pred_offset)), axis=1)  # [batch_sz, ], reduce loc_dim
+        reward = - tf.reduce_mean(tf.square((self.lbl_ph - self.pred_offset)), axis=1)  # [batch_sz, ], reduce loc_dim
         rewards = tf.expand_dims(reward, 1)             # [batch_sz, 1]
         rewards = tf.tile(rewards, (1, num_glimpses))   # [batch_sz, timesteps]
         advantages = rewards - tf.stop_gradient(baselines) # (B, timesteps), baseline approximate func is trained by baseline loss only.
-        self.advantage = tf.reduce_mean(advantages)
         logll = _log_likelihood(mean_ts, loc_ts, std)  # (B, timesteps)
         logllratio = tf.reduce_mean(logll * advantages) # reduce B and timesteps
+        self.advantage = tf.reduce_mean(advantages)
         self.reward = tf.reduce_mean(reward)  # reduce batch
 
         # baseline loss for baseline_network, core_network, glimpse_network
@@ -457,14 +459,14 @@ class RecurrentAttentionModel(object):
                 images, labels = mnist.train.next_batch(batch_size)
                 images, labels = translatedMnist(images)
                 images = np.tile(images, [num_MC, 1])
-                labels = np.tile(labels, [num_MC])
+                labels = np.tile(labels, [num_MC, 1])
 
                 output_feed = [self.train_op, self.loss, self.regress_mse, self.reward, self.advantage, self.baselines_mse, self.learning_rate]
                 _, loss, regress_mse, reward, advantage, baselines_mse, learning_rate = sess.run(output_feed, feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
 
                 # log
                 if step and step % 100 == 0:
-                    logging.info('step {}: lr = {:3.6f}\tloss = {:3.4f}\tregress_mse = {:3.4f}\treward = {:3.4f}\tadvantage = {:3.4f}\tbaselines_mse = {:3.4f}'.format( step, learning_rate, loss, xent, reward, advantage, baselines_mse))
+                    logging.info('step {}: lr = {:3.6f}\tloss = {:3.4f}\tregress_mse = {:3.4f}\treward = {:3.4f}\tadvantage = {:3.4f}\tbaselines_mse = {:3.4f}'.format( step, learning_rate, loss, regress_mse, reward, advantage, baselines_mse))
 
                 # Evaluation
                 if step and step % self.training_steps_per_epoch == 0:
@@ -478,10 +480,10 @@ class RecurrentAttentionModel(object):
                             labels_bak = labels
                             # Duplicate M times
                             images = np.tile(images, [num_MC, 1])
-                            labels = np.tile(labels, [num_MC])
+                            labels = np.tile(labels, [num_MC, 1])
                             regress_mse = sess.run(self.regress_mse, feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
 
                         if dataset == mnist.validation:
-                            logging.info('valid mse = {}'.format(regress_mse))
+                            logging.info('valid regress mse = {}'.format(regress_mse))
                         else:
-                            logging.info('test mse = {}'.format(regress_mse))
+                            logging.info('test regress mse = {}'.format(regress_mse))
