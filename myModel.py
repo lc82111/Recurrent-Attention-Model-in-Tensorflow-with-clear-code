@@ -8,6 +8,14 @@ import random
 
 logging.getLogger().setLevel(logging.INFO)
 
+
+def normalize_value(tensor):
+    """
+    to [0.0, 1.0]
+    """
+    return tf.div(tf.subtract(tensor, tf.reduce_min(tensor) ), tf.subtract( tf.reduce_max(tensor), tf.reduce_min(tensor)))
+
+
 def _weight_variable(shape):
     initial = tf.truncated_normal(shape=shape, stddev=0.01)
     return tf.Variable(initial)
@@ -422,11 +430,6 @@ class RecurrentAttentionModel(object):
         # make classify action at last time step
         self.pred_offset = regress_network(h_ts[-1])
 
-        # training preparation
-        self.global_step = tf.Variable(0, trainable=False)
-        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step, training_steps_per_epoch, learning_rate_decay_factor, staircase=True), min_learning_rate)
-        self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=99999999)
-
         ## losses
         # regress loss for regress_network, core_network, glimpse_network
         self.regress_mse = tf.reduce_mean(tf.square((self.lbl_ph - self.pred_offset)))
@@ -447,43 +450,81 @@ class RecurrentAttentionModel(object):
 
         # hybrid loss
         self.loss = -logllratio + self.regress_mse + self.baselines_mse
+
+        # training preparation
+        self.global_step = tf.Variable(0, trainable=False)
+        self.learning_rate = tf.maximum(tf.train.exponential_decay(learning_rate, self.global_step, training_steps_per_epoch, learning_rate_decay_factor, staircase=True), min_learning_rate)
+        self.saver = tf.train.Saver(tf.global_variables(), max_to_keep=10)
         params = tf.trainable_variables()
         gradients = tf.gradients(self.loss, params)
         clipped_gradients, norm = tf.clip_by_global_norm(gradients, max_gradient_norm)
         self.train_op = tf.train.AdamOptimizer(self.learning_rate).apply_gradients(zip(clipped_gradients, params), global_step=self.global_step)
 
+        ## summaries
+        self.smr_writer_train = tf.summary.FileWriter('./tf_logs/train')
+        self.smr_writer_train.add_graph(tf.get_default_graph())
+        self.smr_writer_valid = tf.summary.FileWriter('./tf_logs/valid')
+        self.smr_writer_test = tf.summary.FileWriter('./tf_logs/test')
+
+        # image summary
+        img = tf.reshape(self.img_ph, [tf.shape(self.img_ph)[0], translate_img_size, translate_img_size, 1])
+        img = normalize_value(img)
+        tf.summary.image('img', img)
+        tf.summary.histogram('img', self.img_ph)
+        tf.summary.scalar('logllratio', logllratio)
+        tf.summary.scalar('regress_mse', self.regress_mse)
+        tf.summary.scalar('baselines_mse', self.baselines_mse)
+        tf.summary.scalar('loss', self.loss)
+        self.merged_smrs = tf.summary.merge_all()
+
     def train(self, num_steps, num_MC, batch_size, mnist):
-        with tf.Session() as sess:
-            sess.run(tf.global_variables_initializer())
-            for step in xrange(num_steps):
-                images, labels = mnist.train.next_batch(batch_size)
-                images, labels = translatedMnist(images)
-                images = np.tile(images, [num_MC, 1])
-                labels = np.tile(labels, [num_MC, 1])
+        try:
+            with tf.Session() as sess:
+                sess.run(tf.global_variables_initializer())
+                for step in xrange(num_steps):
+                    images, labels = mnist.train.next_batch(batch_size)
+                    images, labels = translatedMnist(images)
+                    images = np.tile(images, [num_MC, 1])
+                    labels = np.tile(labels, [num_MC, 1])
 
-                output_feed = [self.train_op, self.loss, self.regress_mse, self.reward, self.advantage, self.baselines_mse, self.learning_rate]
-                _, loss, regress_mse, reward, advantage, baselines_mse, learning_rate = sess.run(output_feed, feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
+                    output_feed = [self.merged_smrs, self.train_op, self.loss, self.regress_mse, self.reward, self.advantage, self.baselines_mse, self.learning_rate]
+                    smrs, _, loss, regress_mse, reward, advantage, baselines_mse, learning_rate = sess.run(output_feed, feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
+                    self.smr_writer_train.add_summary(smrs, step)
 
-                # log
-                if step and step % 100 == 0:
-                    logging.info('step {}: lr = {:3.6f}\tloss = {:3.4f}\tregress_mse = {:3.4f}\treward = {:3.4f}\tadvantage = {:3.4f}\tbaselines_mse = {:3.4f}'.format( step, learning_rate, loss, regress_mse, reward, advantage, baselines_mse))
+                    # log
+                    if step and step % 100 == 0:
+                        logging.info('step {}: lr = {:3.6f}\tloss = {:3.4f}\tregress_mse = {:3.4f}\treward = {:3.4f}\tadvantage = {:3.4f}\tbaselines_mse = {:3.4f}'.format( step, learning_rate, loss, regress_mse, reward, advantage, baselines_mse))
 
-                # Evaluation
-                if step and step % self.training_steps_per_epoch == 0:
-                    for dataset in [mnist.validation, mnist.test]:
-                        steps_per_epoch = dataset.num_examples // batch_size
-                        correct_cnt = 0
-                        num_samples = steps_per_epoch * batch_size
-                        for test_step in xrange(steps_per_epoch):
-                            images, labels = dataset.next_batch(batch_size)
-                            images, labels = translatedMnist(images)
-                            labels_bak = labels
-                            # Duplicate M times
-                            images = np.tile(images, [num_MC, 1])
-                            labels = np.tile(labels, [num_MC, 1])
-                            regress_mse = sess.run(self.regress_mse, feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
+                    # Evaluation
+                    if step and step % self.training_steps_per_epoch == 0:
+                        for dataset in [mnist.validation, mnist.test]:
+                            steps_per_epoch = dataset.num_examples // batch_size
+                            correct_cnt = 0
+                            num_samples = steps_per_epoch * batch_size
+                            for test_step in xrange(steps_per_epoch):
+                                images, labels = dataset.next_batch(batch_size)
+                                images, labels = translatedMnist(images)
+                                labels_bak = labels
+                                # Duplicate M times
+                                images = np.tile(images, [num_MC, 1])
+                                labels = np.tile(labels, [num_MC, 1])
+                                smrs, regress_mse = sess.run([self.merged_smrs, self.regress_mse], feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})
 
-                        if dataset == mnist.validation:
-                            logging.info('valid regress mse = {}'.format(regress_mse))
-                        else:
-                            logging.info('test regress mse = {}'.format(regress_mse))
+                            if dataset == mnist.validation:
+                                logging.info('valid regress mse = {}'.format(regress_mse))
+                                self.smr_writer_valid.add_summary(smrs, step)
+                            else:
+                                logging.info('test regress mse = {}'.format(regress_mse))
+                                self.smr_writer_test.add_summary(smrs, step)
+
+                    # save model
+                    if step and step % 10000 == 0:
+                        self.saver.save(sess, './checkpoint_dir/checkpoint_loss_%.4f' % (self.regress_mse), global_step=step)
+
+        except KeyboardInterrupt:
+            print('\n key interrupt.')
+            yesorno = raw_input('save checkpoint ? [yes/no]')
+            if yesorno == 'yes' or yesorno == 'y':
+                saver.save(sess, self.checkpoint_dir + '/checkpoint_loss_%.4f' % (avg_loss_v), global_step=epoch)
+                print('Saved! Exit ....')
+            sys.exit()
