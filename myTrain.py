@@ -49,4 +49,5 @@ ram = RecurrentAttentionModel(img_size=28, # MNIST: 28 * 28
                               max_gradient_norm=FLAGS.max_gradient_norm,
                               is_training=True)
 
-ram.train(FLAGS.num_steps, FLAGS.M, FLAGS.batch_size, mnist)
+# ram.train(FLAGS.num_steps, FLAGS.M, FLAGS.batch_size, mnist)
+ram.plot_glimpse_trace(mnist)

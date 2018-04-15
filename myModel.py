@@ -5,8 +5,18 @@ from tensorflow.python.ops.distributions.normal import Normal
 import logging
 import numpy as np
 import random
+from plot import plotGlimpseTrace
 
 logging.getLogger().setLevel(logging.INFO)
+
+def init_variables_or_recover_from_ckpts(sess, saver, ckpt_dir, ckpt_fn=None):
+    ckpt = tf.train.get_checkpoint_state(ckpt_dir)
+    if ckpt_fn:
+        saver.restore(sess, ckpt_fn)
+    elif ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
+        saver.restore(sess, ckpt.model_checkpoint_path)
+    else:
+        sess.run(tf.global_variables_initializer())
 
 
 def normalize_value(tensor):
@@ -395,6 +405,7 @@ class RecurrentAttentionModel(object):
                  learning_rate, learning_rate_decay_factor, min_learning_rate, training_steps_per_epoch,
                  max_gradient_norm, is_training=False):
         self.training_steps_per_epoch = training_steps_per_epoch
+        self.translate_img_size = translate_img_size
 
         with tf.variable_scope('placeholder'):
             self.img_ph = tf.placeholder(tf.float32, [None, translate_img_size*translate_img_size])
@@ -422,7 +433,7 @@ class RecurrentAttentionModel(object):
 
         ## call all networks to build graph
         # Run the recurrent attention model for all timestep on the minibatch of images
-        loc_ts, mean_ts, h_ts = core_network(self.img_ph, location_network, retina_sensor, glimpse_network)
+        loc_ts, self.mean_ts, h_ts = core_network(self.img_ph, location_network, retina_sensor, glimpse_network)
 
         # baselines, approximate value function based h_ts
         baselines = baseline_network(h_ts)
@@ -440,7 +451,7 @@ class RecurrentAttentionModel(object):
         rewards = tf.expand_dims(reward, 1)             # [batch_sz, 1]
         rewards = tf.tile(rewards, (1, num_glimpses))   # [batch_sz, timesteps]
         advantages = rewards - tf.stop_gradient(baselines) # (B, timesteps), baseline approximate func is trained by baseline loss only.
-        logll = _log_likelihood(mean_ts, loc_ts, std)  # (B, timesteps)
+        logll = _log_likelihood(self.mean_ts, loc_ts, std)  # (B, timesteps)
         logllratio = tf.reduce_mean(logll * advantages) # reduce B and timesteps
         self.advantage = tf.reduce_mean(advantages)
         self.reward = tf.reduce_mean(reward)  # reduce batch
@@ -480,7 +491,7 @@ class RecurrentAttentionModel(object):
     def train(self, num_steps, num_MC, batch_size, mnist):
         try:
             with tf.Session() as sess:
-                sess.run(tf.global_variables_initializer())
+                init_variables_or_recover_from_ckpts(sess, self.saver, './checkpoint_dir')
                 for step in xrange(num_steps):
                     images, labels = mnist.train.next_batch(batch_size)
                     images, labels = translatedMnist(images)
@@ -519,12 +530,27 @@ class RecurrentAttentionModel(object):
 
                     # save model
                     if step and step % 10000 == 0:
-                        self.saver.save(sess, './checkpoint_dir/checkpoint_loss_%.4f' % (self.regress_mse), global_step=step)
+                        self.saver.save(sess, './checkpoint_dir/checkpoint_loss_%.4f' % (regress_mse), global_step=step)
 
         except KeyboardInterrupt:
             print('\n key interrupt.')
             yesorno = raw_input('save checkpoint ? [yes/no]')
             if yesorno == 'yes' or yesorno == 'y':
-                saver.save(sess, self.checkpoint_dir + '/checkpoint_loss_%.4f' % (avg_loss_v), global_step=epoch)
+                self.saver.save(sess, './checkpoint_dir/checkpoint_loss_%.4f' % (regress_mse), global_step=step)
                 print('Saved! Exit ....')
             sys.exit()
+
+    def plot_glimpse_trace(self, mnist, targetSize=48, batch_size=32):
+        with tf.Session() as sess:
+            init_variables_or_recover_from_ckpts(sess, self.saver, './checkpoint_dir')
+            for step in xrange(self.training_steps_per_epoch):
+                images, labels = mnist.train.next_batch(batch_size)
+                images, labels = translatedMnist(images)
+
+                mean_ts = sess.run([self.mean_ts], feed_dict={self.img_ph: images, self.lbl_ph: labels, self.is_training:True})[0]
+
+                means = np.stack(mean_ts)  # [num_glimpse, B, 2]
+                means = np.swapaxes(means, 0, 1)  # [B, num_glimpse, 2]
+                images = np.reshape(images, [images.shape[0], self.translate_img_size, self.translate_img_size, 1])
+                plotGlimpseTrace(images, means, './results', targetSize, str(step))
+            print('done!')
