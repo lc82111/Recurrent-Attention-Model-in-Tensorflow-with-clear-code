@@ -16,7 +16,7 @@ tf.app.flags.DEFINE_float("max_gradient_norm", 5.0, "Clip gradients to this norm
 tf.app.flags.DEFINE_integer("batch_size", 32, "Batch size to use during training.")
 tf.app.flags.DEFINE_integer("num_steps", 9000009, "Number of training steps.")
 
-tf.app.flags.DEFINE_integer("patch_window_size", 16, "Size of glimpse patch window.")
+tf.app.flags.DEFINE_integer("patch_window_size", 5, "Size of glimpse patch window.")
 tf.app.flags.DEFINE_integer("g_size", 128, "Size of theta_g^0.")
 tf.app.flags.DEFINE_integer("l_size", 128, "Size of theta_g^1.")
 tf.app.flags.DEFINE_integer("glimpse_output_size", 256, "Output size of Glimpse Network.")
@@ -37,7 +37,7 @@ ram = RecurrentAttentionModel(img_size=28, # MNIST: 28 * 28
                               g_size=FLAGS.g_size,
                               l_size=FLAGS.l_size,
                               glimpse_output_size=FLAGS.glimpse_output_size,
-                              loc_dim=2,   # (x,y)
+                              loc_dim=4,   # (x,y)
                               std=FLAGS.std,
                               hidden_size=FLAGS.hidden_size,
                               num_glimpses=FLAGS.num_glimpses,

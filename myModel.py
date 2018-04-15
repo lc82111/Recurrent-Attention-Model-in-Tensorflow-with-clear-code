@@ -91,7 +91,7 @@ class RetinaSensor(object):
     - img_size: img_ph size.
     - pth_size: patch size.
     - img_ph: a 4D Tensor of shape (B, H, W, C). The minibatch of images.
-    - loc_t: a 2D Tensor of shape (B, 2). Contains normalized coordinates in the range [-1, 1].
+    - loc_t: a 2D Tensor of shape (B, 4). Contains normalized coordinates in the range [-1, 1].
     - pth_size: a scalar. Size of the square glimpse patch.
     Returns
     -------
@@ -104,9 +104,11 @@ class RetinaSensor(object):
 
     def __call__(self, img_ph, loc_t):
         img = tf.reshape(img_ph, [tf.shape(img_ph)[0], self.img_size, self.img_size, 1])
-        pth = tf.image.extract_glimpse(img, [self.pth_size, self.pth_size], loc_t)
-        pth = tf.reshape(pth, [tf.shape(loc_t)[0], self.pth_size*self.pth_size])
-        return pth
+        pth1 = tf.image.extract_glimpse(img, [self.pth_size, self.pth_size], loc_t[:2])
+        pth2 = tf.image.extract_glimpse(img, [self.pth_size, self.pth_size], loc_t[2:])
+        pth1 = tf.reshape(pth1, [tf.shape(loc_t)[0], self.pth_size*self.pth_size])
+        pth2 = tf.reshape(pth2, [tf.shape(loc_t)[0], self.pth_size*self.pth_size])
+        return pth1, pth2
 
 
 class LocationNetwork(object):
@@ -180,12 +182,12 @@ class GlimpseNetwork(object):
     Args
     ----
     - pth_size: pth size
-    - loc_dim: location dim = 2
+    - loc_dim: location dim = 4
     - g_size: hidden layer size of the fc layer for `pths`.
     - l_size: hidden layer size of the fc layer for `locs`.
     - output_size: output size of this network.
     - pth_t: a 4D Tensor of shape (B, pth_size, pth_size, 1). Current time step minibatch of pths.
-    - loc_t: a 2D vector of shape (B, 2). Current time step location sampled from guassian(mean)
+    - loc_t: a 2D vector of shape (B, 4). Current time step location sampled from guassian(mean)
     Returns
     -------
     - glimpse_t: a 2D tensor of shape (B, output_size). The glimpse representation returned by the glimpse network for the current timestep `t`.
@@ -205,9 +207,9 @@ class GlimpseNetwork(object):
         self.l2_w = _weight_variable((l_size, output_size))
         self.l2_b = _bias_variable((output_size,))
 
-    def __call__(self, pth_t, loc_t):
+    def __call__(self, pth1_t, pth2_t, loc_t):
         # feed pths and locs to respective fc layers
-        what  = tf.nn.xw_plus_b(tf.nn.relu(tf.nn.xw_plus_b(pth_t, self.g1_w, self.g1_b)), self.g2_w, self.g2_b)
+        what  = tf.nn.xw_plus_b(tf.nn.relu(tf.nn.xw_plus_b(pth1_t+pth2_t, self.g1_w, self.g1_b)), self.g2_w, self.g2_b)
         where = tf.nn.xw_plus_b(tf.nn.relu(tf.nn.xw_plus_b(loc_t, self.l1_w, self.l1_b)), self.l2_w, self.l2_b)
 
         # feed to fc layer
@@ -317,7 +319,7 @@ class CoreNetwork(object):
     Returns
     -------
     - h_ts: a 2D tensor of shape (B, hidden_size). The hidden state vector for the current timestep `t`.
-    - loc_ts: a list of 2D tensor of shape (B, 2). The glimpse center sampled from guassian of all time steps.
+    - loc_ts: a list of 2D tensor of shape (B, 4). The glimpse center sampled from guassian of all time steps.
     - mean_ts: a list of 2D tensor of shape (B, 2). The guassian mean of all time steps.
     """
     def __init__(self, batch_size, loc_dim, hidden_size, num_glimpses):
@@ -342,10 +344,10 @@ class CoreNetwork(object):
             mean_ts.append(mean_t)
 
             # crop pths from image based on the predicted location
-            pths_t = retina_sensor(img_ph, loc_t)
+            pth1_t, pth2_t = retina_sensor(img_ph, loc_t)
 
             # generate glimpse image from current pths_t and loc_t
-            glimpse = glimpse_network(pths_t, loc_t)
+            glimpse = glimpse_network(pth1_t, pth2_t, loc_t)
             return glimpse
 
         # lstm init h_t
@@ -353,8 +355,8 @@ class CoreNetwork(object):
 
         # lstm inputs at every step
         init_loc = tf.random_uniform((self.batch_size, self.loc_dim), minval=-1, maxval=1)
-        init_pths = retina_sensor(img_ph, init_loc)
-        init_glimpse = glimpse_network(init_pths, init_loc)
+        init_pth1, init_pth2 = retina_sensor(img_ph, init_loc)
+        init_glimpse = glimpse_network(init_pth1, init_pth2, init_loc)
         rnn_inputs = [init_glimpse]
         rnn_inputs.extend([0] * self.num_glimpses)
 
@@ -379,7 +381,7 @@ class RecurrentAttentionModel(object):
     - g_size: hidden layer size of the fc layer for `phi`.
     - l_size: hidden layer size of the fc layer for `locs`.
     - glimpse_output_size: output size of glimpse network.
-    - loc_dim: 2
+    - loc_dim: 4
     - std: standard deviation of the Gaussian policy.
     - hidden_size: hidden size of the rnn.
     - num_classes: number of classes in the dataset.
