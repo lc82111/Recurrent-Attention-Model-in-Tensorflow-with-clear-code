@@ -493,7 +493,8 @@ class RecurrentAttentionModel(object):
     def train(self, num_steps, num_MC, batch_size, mnist):
         try:
             with tf.Session() as sess:
-                init_variables_or_recover_from_ckpts(sess, self.saver, './checkpoint_dir')
+                # init_variables_or_recover_from_ckpts(sess, self.saver, './checkpoint_dir')
+                init_variables_or_recover_from_ckpts(sess, self.saver, None)
                 for step in xrange(num_steps):
                     images, labels = mnist.train.next_batch(batch_size)
                     images, labels = translatedMnist(images)
