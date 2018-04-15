@@ -104,8 +104,8 @@ class RetinaSensor(object):
 
     def __call__(self, img_ph, loc_t):
         img = tf.reshape(img_ph, [tf.shape(img_ph)[0], self.img_size, self.img_size, 1])
-        pth1 = tf.image.extract_glimpse(img, [self.pth_size, self.pth_size], loc_t[:2])
-        pth2 = tf.image.extract_glimpse(img, [self.pth_size, self.pth_size], loc_t[2:])
+        pth1 = tf.image.extract_glimpse(img, [self.pth_size, self.pth_size], loc_t[:,:2])
+        pth2 = tf.image.extract_glimpse(img, [self.pth_size, self.pth_size], loc_t[:,2:])
         pth1 = tf.reshape(pth1, [tf.shape(loc_t)[0], self.pth_size*self.pth_size])
         pth2 = tf.reshape(pth2, [tf.shape(loc_t)[0], self.pth_size*self.pth_size])
         return pth1, pth2
