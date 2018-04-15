@@ -289,7 +289,7 @@ class RegressNetwork(object):
     """
     def __init__(self, hidden_size, loc_dim):
         self.w = _weight_variable((hidden_size, loc_dim))
-        self.b = _bias_variable((loc_dim,))
+        self.b = _bias_variable((loc_dim-2,))
 
     def __call__(self, h_last):
         # Take the last step only.
